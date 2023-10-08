@@ -1,0 +1,47 @@
+<!DOCTYPE doctype PUBLIC "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+        
+  <meta http-equiv="Content-Type"
+ content="text/html; charset=EUC-JP">
+        
+  <meta name="Author" content="SST-Engine">
+  <title>Server Side TAD Engine</title>
+   
+</head>
+  <body text="#000000" bgcolor="#F1D69F" link="#0000ee" vlink="#551a8b" alink="#ff0000">
+   
+<p><font size="+3"><b>SST-Client</b></font> - SST-Clientは、tad-wgのインターネットサーバに接続して、文章や図形をPDFに変換します。
+</p>
+
+<ol>
+<li>起動すると、接続を確認するパネルが表示され、接続先のURLがシステムメッセージパネルに表示されます。確認を選択します。
+<li>データの送信がおこなわれます。システムメッセージパネルに進捗が表示されます。
+<li>サーバで変換処理がおこなわれます。システムメッセージパネルには「応答待ち」と表示されます。
+<li>実身名を入力するパネルが表示され、ダウンロードされるデータタイプがシステムメッセージパネルに表示されます。実身名を入力して、保存を選択します。
+<li>データの送信がおこなわれます。システムメッセージパネルに進捗が表示されます。
+<li>パネルが閉じ、初期ウィンドウにダウンロードした仮身が現れます。
+</ol>
+
+<p><b>ダウンロード</b> <a href="wp06705r.bpk">wp06705r.bpk</a></p>
+
+<p><b>エラーメッセージ</b></p>
+<dl>
+<dt>ネットワークが使用できません
+<br>サーバに接続できません
+ <dd>ブラウザなどでwww.tad-wg.jpに接続できることを確認してください。プロクシには対応していません。
+<dt>実身にTADレコードが見つかりません
+ <dd>文章や図形以外のデータは対応していません。
+<dt>サーバからの応答でエラーが発生しました
+ <dd>サーバ側のエラーです。システムメッセージパネルに応答コードが表示されます。
+<dt>サーバからコンテンツ配置の応答がありません
+<br>サーバから転送サイズの応答がありません
+ <dd>処理できない形式のデータの場合に、このようなエラーが発生することがあります。
+</dl>
+
+<hr size="12" width="100%">  
+<div align="right">&#169; TAD Working Group</a>, 2002-2010</div>
+   <br><br>
+ 
+</body>
+</html>
