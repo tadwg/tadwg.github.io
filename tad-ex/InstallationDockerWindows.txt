@@ -1,0 +1,37 @@
+﻿Windows上でのDocker実行環境構築手順
+
+【前書き】
+　本来Linux環境で動作させることを前提としたDockerを、Windows上で動作させるための公式なパッケージとして、2017年8月現在「Docker Toolbox」と「Docker for Windows」の2つが提供されています。「Docker for Windows」は、64bit版Winsows 10のPro、Enterprise、EducationエディションをOSを必要とするため、ここでは64bit版Windows 7以降をサポートする「Docker Toolbox」を使用する方法を例示します。
+
+【1.ダウンロード】
+　公式サイトから、Docker Toolboxのインストーラをダウンロードしてきます。
+https://www.docker.com/products/docker-toolbox
+　本稿執筆時点での最新版は下記の通りです。
+https://download.docker.com/win/stable/DockerToolbox.exe
+
+【2.インストーラ起動】
+　上記インストーラを管理者権限で実行します。
+　インストーラは下記のソフトウェアをインストールします。
+•Docker Client for Windows
+•Docker Machine for Windows
+•Docker Compose for Windows
+•Kitematic for Windows(Alpha)
+•VirtualBox
+•Git for windows
+※もし既にVirtualBoxをご使用の場合は、インストーラのチェックボックスを外した方が良いと思われます。VirtualBoxのインストール時に、コンポーネントのインストールの許可を求められますが、許可をして下さい。また、VirtualBoxとVMwareを一台のマシンにインストールすると、VMware側のネットワークアダプタの設定が変更され、外部との通信ができなくなることがあるそうですので、ご注意ください。
+
+【3.Docker Quickstart Terminalを起動】
+　インストールが終了すると、スタートメニューに「Docker Quickstart Terminal」という名称のショートカットが作られている筈ですので、これを実行してください。
+　そうするとMINGW64…というタイトルのターミナルウィンドウが開き、「default」という名前の仮想マシンが起動され、その仮想マシンのIPアドレスが表示されます。標準的な環境の場合「192.168.99.100」となるようです。
+
+【4.TAD-ViewのDockerイメージのダウンロード】
+　上で開いたターミナルで「docker run -it -p 8080:80 tadwg/tadview」とタイプします。これにより、インターネット経由でTAD-ViewのDockerイメージがダウンロードされ、仮想マシンの上で走り始めます。二回目からは、ローカル上にあるイメージが使用されます。
+
+【5.TAD-Viewへアクセスする】
+　Windows上のWebブラウザを開き、URLとしてDockerターミナルに表示されているIPアドレスに続けて“:8080/tadview.php”と指定します。標準的な環境の場合、以下のURLとなります。
+http://192.168.99.100:8080/tadview.php
+　これで、TAD-Viewの画面が表示されれば成功となります。Microsoft Edgeで表示できない場合は、Mozilla FirefoxまたはGoogle Chromeをお試し下さい。
+　また、http://192.168.99.100:8080/tadviewbp.phpでは、書庫管理(BPK)対応tadviewになります。
+
+【6.終了する】
+　終了する場合は、Dockerターミナル上でCtrl-Cを押し、Dockerイメージの実行を終了して下さい。
