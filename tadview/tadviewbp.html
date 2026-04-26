@@ -3410,9 +3410,9 @@ class GenvPdf {
     const l = code & 0xff;
     if (s !== 0x21 || h < 0x21 || h > 0x7e || l < 0x21 || l > 0x7e) return;
 
-    // Convert to SJIS for the CID font
-    const sjis = eucToSjis(h | 0x80, l | 0x80);
-    if (!sjis) return;
+    // Convert EUC-JP to Unicode codepoint
+    const ucs2 = eucToUnicode(h | 0x80, l | 0x80);
+    if (!ucs2) return;
 
     const vertical = !!(this.fontattr & 0x4000);
     const cidFont = this._currentCIDFont || (vertical ? this._cidFontV : this._cidFontH);
@@ -3437,8 +3437,8 @@ class GenvPdf {
     const g = this.currentColor[1];
     const b = this.currentColor[2];
 
-    // Build PDF string: SJIS 2-byte as hex
-    const hexStr = sjis.toString(16).padStart(4, '0');
+    // Build PDF string: Unicode codepoint as hex (for UniJIS-UCS2-H)
+    const hexStr = ucs2.toString(16).padStart(4, '0');
 
     // Scale for non-square aspect
     const scaleX = (width / height) * (this.ratio_h / this.ratio_v);
@@ -3464,10 +3464,10 @@ class GenvPdf {
     const s=(code>>16)&0xffff, h=(code>>8)&0xff, l=code&0xff;
     if (s !== 0x21) return width;
     // Check if half-width via EUC-JP → SJIS
-    const sjis = eucToSjis(h|0x80, l|0x80);
-    if (!sjis) return width;
-    // Half-width kana or ASCII
-    if (sjis < 0x100) return width / 2;
+    const ucs2 = eucToUnicode(h|0x80, l|0x80);
+    if (!ucs2) return width;
+    // Half-width: U+0020..U+007E (ASCII) or half-width kana U+FF61..U+FF9F
+    if (ucs2 < 0x0100 || (ucs2 >= 0xFF61 && ucs2 <= 0xFF9F)) return width / 2;
     return width;
   }
 
@@ -3531,20 +3531,16 @@ class GenvPdf {
 // EUC-JP → SJIS conversion (for CID font encoding)
 // ============================================================
 
-function eucToSjis(eucH, eucL) {
-  let row = eucH - 0xa1;
-  let col = eucL - 0xa1;
-  if (row < 0 || row > 93 || col < 0 || col > 93) return null;
-  let sjisH, sjisL;
-  if (row % 2 === 0) {
-    sjisH = (row < 62) ? (row >> 1) + 0x71 : (row >> 1) + 0xb1;
-    sjisL = col + 0x40 + (col >= 0x3f ? 1 : 0);
-  } else {
-    sjisH = (row < 63) ? ((row - 1) >> 1) + 0x71 : ((row - 1) >> 1) + 0xb1;
-    sjisL = col + 0x9f;
+function eucToUnicode(eucH, eucL) {
+  try {
+    const bytes = new Uint8Array([eucH, eucL]);
+    const str = new TextDecoder('euc-jp').decode(bytes);
+    const cp = str.codePointAt(0);
+    if (cp === undefined || cp === 0xFFFD) return null;
+    return cp;
+  } catch(e) {
+    return null;
   }
-  if (sjisH >= 0xa0 && sjisH <= 0xdf) sjisH += 0x40;
-  return (sjisH << 8) | sjisL;
 }
 
 // ============================================================
