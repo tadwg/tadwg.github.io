@@ -3134,27 +3134,12 @@ class GenvPdf {
     });
     const cidFontRef = ctx.register(cidFont);
 
-    const toUnicode = ctx.flateCompress(
-      '/CIDInit /ProcSet findresource begin\n' +
-      '12 dict begin\n' +
-      'begincmap\n' +
-      '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n' +
-      '/CMapName /Adobe-Identity-UCS def\n' +
-      '/CMapType 2 def\n' +
-      'endcmap\n' +
-      'CMapName currentdict /CMap defineresource pop\n' +
-      'end\n' +
-      'end\n'
-    );
-    const toUnicodeRef = ctx.register(toUnicode);
-
     const font = ctx.obj({
       Type:            'Font',
       Subtype:         'Type0',
       BaseFont:        fontName,
       Encoding:        cmap,
       DescendantFonts: [cidFontRef],
-      ToUnicode:       toUnicodeRef,
     });
     const fontRef = ctx.register(font);
 
