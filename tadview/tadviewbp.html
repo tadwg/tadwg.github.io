@@ -3083,7 +3083,7 @@ class GenvPdf {
     this.ratio_h = 0.212; this.ratio_v = 0.212;
     this.fontattr = 0; this.fontclass = 0x60c6;
     this.linewidth = 1;
-    this.currentColor = pdfLib.rgb(0,0,0);
+    this.currentColor = [0, 0, 0];
     this.pagenumber = 1; this.pagestep = 1;
     this.overlay = null;
     this.pagecountobj = new PageCount();
@@ -3254,10 +3254,11 @@ class GenvPdf {
 
   // Color
   setcolor(rgb) {
-    const r = ((rgb >> 16) & 0xff) / 255;
-    const g = ((rgb >> 8) & 0xff) / 255;
-    const b = (rgb & 0xff) / 255;
-    this.currentColor = this.PDFLib.rgb(r, g, b);
+    this.currentColor = [
+      ((rgb >> 16) & 0xff) / 255,
+      ((rgb >> 8) & 0xff) / 255,
+      (rgb & 0xff) / 255
+    ];
   }
 
   setpattern(array) {
@@ -3291,20 +3292,34 @@ class GenvPdf {
 
   _pdfY(y) { return this.height * this.ratio_v - y * this.ratio_v; }
 
+  _colorStr(mode) {
+    const r = this.currentColor[0];
+    const g = this.currentColor[1];
+    const b = this.currentColor[2];
+    const op = mode === 'stroke' ? 'RG' : 'rg';
+    return `${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} ${op}`;
+  }
+
   _beginStroke() {
     if (!this.currentPage) return;
-    this.currentPage.setStrokeColor(this.currentColor);
-    this.currentPage.setLineWidth(this.linewidth * this.ratio_h);
-    if (this.dashPattern) {
-      this.currentPage.setLineDashPattern(this.dashPattern, 0);
-    } else {
-      this.currentPage.setLineDashPattern([], 0);
+    const lw = (this.linewidth * this.ratio_h).toFixed(4);
+    let dashStr = '[] 0 d';
+    if (this.dashPattern && this.dashPattern.length > 0) {
+      const arr = this.dashPattern.map(v => v.toFixed(2)).join(' ');
+      dashStr = `[${arr}] 0 d`;
     }
+    this.currentPage.pushOperators(
+      this.PDFLib.PDFOperator.of(this._colorStr('stroke')),
+      this.PDFLib.PDFOperator.of(`${lw} w`),
+      this.PDFLib.PDFOperator.of(dashStr)
+    );
   }
 
   _beginFill() {
     if (!this.currentPage) return;
-    this.currentPage.setFillColor(this.currentColor);
+    this.currentPage.pushOperators(
+      this.PDFLib.PDFOperator.of(this._colorStr('fill'))
+    );
   }
 
   polyline(count, array) {
@@ -3418,9 +3433,9 @@ class GenvPdf {
     }
 
     // Emit raw PDF text operators using CID font
-    const r = ((this.currentColor.red   || 0));
-    const g = ((this.currentColor.green || 0));
-    const b = ((this.currentColor.blue  || 0));
+    const r = this.currentColor[0];
+    const g = this.currentColor[1];
+    const b = this.currentColor[2];
 
     // Build PDF string: SJIS 2-byte as hex
     const hexStr = sjis.toString(16).padStart(4, '0');
@@ -3478,18 +3493,29 @@ class GenvPdf {
 
     try {
       const img = await this.pdfDoc.embedPng(pngBytes);
-      const vl = view_rect[0] * this.ratio_h;
-      const vt = this._pdfY(view_rect[1]);
-      const vr = view_rect[2] * this.ratio_h;
-      const vb = this._pdfY(view_rect[3]);
-      const w = Math.abs(vr - vl);
-      const h = Math.abs(vt - vb);
-      this.currentPage.drawImage(img, {
-        x: Math.min(vl, vr),
-        y: Math.min(vt, vb),
-        width:  w,
-        height: h,
-      });
+      const vl = Math.min(view_rect[0], view_rect[2]) * this.ratio_h;
+      const vb = Math.min(this._pdfY(view_rect[1]), this._pdfY(view_rect[3]));
+      const w = Math.abs(view_rect[2] - view_rect[0]) * this.ratio_h;
+      const h = Math.abs(this._pdfY(view_rect[1]) - this._pdfY(view_rect[3]));
+      if (w > 0 && h > 0) {
+        // Use raw PDF operators to draw image (works with any pdf-lib version)
+        const imgRef = img.ref;
+        const imgName = 'Img' + (this._imgCount = (this._imgCount||0)+1);
+        // Register XObject in page resources
+        const res = this.currentPage.node.get(this.PDFLib.PDFName.of('Resources'));
+        let xobj = res && res.get(this.PDFLib.PDFName.of('XObject'));
+        if (!xobj) {
+          xobj = this.pdfDoc.context.obj({});
+          if (res) res.set(this.PDFLib.PDFName.of('XObject'), xobj);
+        }
+        xobj.set(this.PDFLib.PDFName.of(imgName), imgRef);
+        // Push image drawing operators
+        this.currentPage.pushOperators(
+          this.PDFLib.PDFOperator.of(
+            `q ${w.toFixed(4)} 0 0 ${h.toFixed(4)} ${vl.toFixed(4)} ${vb.toFixed(4)} cm /${imgName} Do Q`
+          )
+        );
+      }
     } catch(e) { /* skip on error */ }
   }
 
