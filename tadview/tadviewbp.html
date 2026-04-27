@@ -545,12 +545,13 @@ class BpLhead {
     this.ftype = fs.uh();
     this.atype = fs.uh();
     // name: 20 LE-16bit words; each word: low=l, high=h → EUC-JP: 0x8080|(h<<8)|l
+    // Must always read exactly 20 words (40 bytes) to keep stream position correct
     const nameEuc = [];
     for (let i = 0; i < 20; i++) {
       const w = fs.uh();
       const l = w & 0xff;
       const h = (w >> 8) & 0xff;
-      if (l === 0) break;
+      if (l === 0) continue;   // null byte: skip but keep reading
       if (h === 0) { nameEuc.push(l); }
       else { nameEuc.push(0x80 | h, 0x80 | l); }
     }
