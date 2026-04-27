@@ -544,10 +544,22 @@ class BpLhead {
   constructor(fs) {
     this.ftype = fs.uh();
     this.atype = fs.uh();
-    // name: 20 LE-16bit words = 40 bytes of SJIS filename, null-terminated
-    const nameBytes = [];
-    for (let i=0;i<20;i++){const w=fs.uh();nameBytes.push(w&0xff,w>>8);}
-    this.name = bpackNameToString(nameBytes);
+    // name: 20 LE-16bit words; each word: low=l, high=h → EUC-JP: 0x8080|(h<<8)|l
+    const nameEuc = [];
+    for (let i = 0; i < 20; i++) {
+      const w = fs.uh();           // LE 16-bit
+      const l = w & 0xff;
+      const h = (w >> 8) & 0xff;
+      if (l === 0) break;          // null terminator
+      if (h === 0) {
+        // ASCII/半角
+        nameEuc.push(l);
+      } else {
+        // 全角: EUC-JP 2バイト = 0x80|h, 0x80|l
+        nameEuc.push(0x80 | h, 0x80 | l);
+      }
+    }
+    this.name = bpackNameToString(nameEuc);
     this.orgid = fs.uh();
     this.compmethod = fs.uh();
     this.orgsize = fs.uw();
@@ -2242,7 +2254,7 @@ class Layout {
     if (this.forwarding === null) this.add(obj, force);
     else this.forwarding.addtobottom(obj, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     pos[0] = this.layout[0]+x; pos[1] = this.layout[1]+y;
     pos[2] = this.layout[2]+x; pos[3] = this.layout[3]+y;
@@ -2305,7 +2317,7 @@ class LayoutRootText extends LayoutRoot {
     this.forwarding = new LayoutPageset(this, this, [0,0,0,0], [0,0]);
     this.forwarding.createbranch(parts, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     if (draw === 0) return;
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
@@ -2351,7 +2363,7 @@ class LayoutPageset extends Layout {
     this.partslist.add(obj);
     obj.setpartsinfo(this);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     this.partslist.rewind();
     let idx = 0, pageage = -1;
@@ -2367,7 +2379,7 @@ class LayoutPageset extends Layout {
       if (genv.newpage(ps[0],ps[1],ps[2],ps[3],ps[4],ps[5]) === null) break;
       const offset = this.offsetlist[idx];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
       idx++;
     }
   }
@@ -2596,13 +2608,13 @@ class ScopeParts extends Parts {
       this.pageattrlist.importcopy(parent.pageattrlist);
     }
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     this.partslist.rewind();
     const x = pos[0], y = pos[1];
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [x, y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
       if (pos[0] > lpos[0]) pos[0]=lpos[0];
       if (pos[1] > lpos[1]) pos[1]=lpos[1];
       if (pos[2] < lpos[2]) pos[2]=lpos[2];
@@ -2771,7 +2783,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     this.bgpat = null;
     this.view = [0,0,0,0];
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2899,7 +2911,7 @@ class FigScopeParts extends ScopeParts {
     this.figattrlist.importcopy(parent.figattrlist);
     this.figattrlist.tadfactory(this);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2911,7 +2923,7 @@ class FigScopeParts extends ScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      target.draw(genv, lpos, 1);
+      await target.draw(genv, lpos, 1);
     }
   }
 }
@@ -2958,7 +2970,7 @@ class BaseFigScopeParts extends FigScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      target.draw(genv, lpos, 1);
+      await target.draw(genv, lpos, 1);
     }
     pos[0]=this.view[0]; pos[1]=this.view[1]; pos[2]=this.view[2]; pos[3]=this.view[3];
   }
@@ -3576,17 +3588,12 @@ class GenvPdf {
 // EUC-JP → SJIS conversion (for CID font encoding)
 // ============================================================
 
-// BPACK filename (SJIS bytes, null-terminated) → JS string
-function bpackNameToString(bytes) {
-  // Find null terminator
-  let end = bytes.indexOf(0);
-  if (end < 0) end = bytes.length;
-  const arr = new Uint8Array(bytes.slice(0, end));
+// BPACK filename bytes (EUC-JP) → JS string
+function bpackNameToString(eucBytes) {
   try {
-    return new TextDecoder('shift-jis').decode(arr);
+    return new TextDecoder('euc-jp').decode(new Uint8Array(eucBytes));
   } catch(e) {
-    // fallback: treat as Latin1
-    return String.fromCharCode(...arr);
+    return String.fromCharCode(...eucBytes);
   }
 }
 
