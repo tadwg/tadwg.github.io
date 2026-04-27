@@ -737,7 +737,7 @@ class PageAttrList extends AttrList {
     target.pageattrlist.add('pagenumber', page);
     target.pageattrlist.add('pagetotal', total);
   }
-  drawoverlay(genv, count = 1, page = 1, total = 1) {
+  async drawoverlay(genv, count = 1, page = 1, total = 1) {
     for (let i = 0; i < 16; i++) {
       if ((this.get('overlay') & (0x8000 >> i)) === 0) continue;
       const index = this.get('overlay-' + i.toString(16));
@@ -1146,7 +1146,7 @@ class Parts {
   }
   getcharwidth() { return -1; }
   getcharheight() { return -1; }
-  async draw(genv, pos, draw = 1) { pos[2] = pos[0]; pos[3] = pos[1]; }
+  draw(genv, pos, draw = 1) { pos[2] = pos[0]; pos[3] = pos[1]; }
   printinfo() {}
   reflowthis(layoutroot, cb, target) {
     if (cb.val) { target.createbranch(this, 1); cb.val = 0; }
@@ -1187,7 +1187,7 @@ class CharParts extends Parts {
     if (this.parent.textattrlist.get('wordwrapb').includes(this.code)) val |= 2;
     return val;
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     let subscript = 0;
     if (this.parent.textattrlist.get('subscript') !== 0) {
@@ -1280,7 +1280,7 @@ class RubiParts extends Parts {
     this.type = type; this.codelist = codelist;
   }
   iswordwrap() { return 2; }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     pos[2] = pos[0]; pos[3] = pos[1];
     if (draw === 0) return;
     const x = pos[0], y = pos[1];
@@ -1628,7 +1628,7 @@ class VobjParts extends Parts {
     this.frcolor = 0; this.fgcolor = 0; this.bgcolor = 0xffffff;
     this.linkinfo = null;
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     let l = pos[0] = this.view[0] + x;
     let t = pos[1] = this.view[1] + y;
@@ -2062,7 +2062,7 @@ class LineParts extends Parts {
   setbgpat(bgpatid) {
     this.bgpat = this.parent.figattrlist.get(sprintf('pattern-%04x', bgpatid));
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     if (this.pointlist.length < 2) { pos[2]=x; pos[3]=y; return; }
     let left=this.pointlist[0],right=this.pointlist[0],top=this.pointlist[1],bottom=this.pointlist[1];
@@ -2107,7 +2107,7 @@ class BezierParts extends Parts {
   setbgpat(bgpatid) {
     this.bgpat = this.parent.figattrlist.get(sprintf('pattern-%04x', bgpatid));
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     if (this.pointlist.length < 8) { pos[2]=x; pos[3]=y; return; }
     let left=this.pointlist[0],right=this.pointlist[0],top=this.pointlist[1],bottom=this.pointlist[1];
@@ -2242,7 +2242,7 @@ class Layout {
     if (this.forwarding === null) this.add(obj, force);
     else this.forwarding.addtobottom(obj, force);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     pos[0] = this.layout[0]+x; pos[1] = this.layout[1]+y;
     pos[2] = this.layout[2]+x; pos[3] = this.layout[3]+y;
@@ -2257,7 +2257,7 @@ class Layout {
       const target = this.partslist.get();
       const offset = this.offsetlist[idx++];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      await target.draw(genv, lpos, draw);
+      target.draw(genv, lpos, draw);
     }
   }
   getcharwidth() {
@@ -2305,12 +2305,12 @@ class LayoutRootText extends LayoutRoot {
     this.forwarding = new LayoutPageset(this, this, [0,0,0,0], [0,0]);
     this.forwarding.createbranch(parts, force);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     if (draw === 0) return;
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] = pos[1] = 0;
-    await this.forwarding.draw(genv, pos, draw);
+    this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2351,7 +2351,7 @@ class LayoutPageset extends Layout {
     this.partslist.add(obj);
     obj.setpartsinfo(this);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     this.partslist.rewind();
     let idx = 0, pageage = -1;
@@ -2367,7 +2367,7 @@ class LayoutPageset extends Layout {
       if (genv.newpage(ps[0],ps[1],ps[2],ps[3],ps[4],ps[5]) === null) break;
       const offset = this.offsetlist[idx];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      await target.draw(genv, lpos, draw);
+      target.draw(genv, lpos, draw);
       idx++;
     }
   }
@@ -2396,11 +2396,11 @@ class LayoutRootInFig extends LayoutRoot {
     this.forwarding = new LayoutLineset(this, this, newlayout, newlimit);
     this.forwarding.createbranch(parts, force);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] += this.offset[0]; pos[1] += this.offset[1];
-    await this.forwarding.draw(genv, pos, draw);
+    this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2566,13 +2566,13 @@ class BranchCreatorParts extends Parts {
     layoutroot.createbranch(this, 0);
   }
   iswordwrap() { return -2; }
-  async draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
+  draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
   setpartsinfo() {}
 }
 
 class AttrHolderParts extends Parts {
   iswordwrap() { return -2; }
-  async draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
+  draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
 }
 
 // ============================================================
@@ -2596,13 +2596,13 @@ class ScopeParts extends Parts {
       this.pageattrlist.importcopy(parent.pageattrlist);
     }
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     this.partslist.rewind();
     const x = pos[0], y = pos[1];
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [x, y, 0, 0];
-      await target.draw(genv, lpos, draw);
+      target.draw(genv, lpos, draw);
       if (pos[0] > lpos[0]) pos[0]=lpos[0];
       if (pos[1] > lpos[1]) pos[1]=lpos[1];
       if (pos[2] < lpos[2]) pos[2]=lpos[2];
@@ -2753,7 +2753,7 @@ class TextScopeParts extends ScopeParts {
     this.textattrlist.add('escapeflag', 0);
     return ns.factoryfinder.read(key, type, stream);
   }
-  async draw(genv, pos, draw = 1) {
+ async draw(genv, pos, draw = 1) {
     const layoutroot = new LayoutRootText(genv);
     this.partslist.rewind();
     const cb = {val:0};
@@ -2771,7 +2771,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     this.bgpat = null;
     this.view = [0,0,0,0];
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2787,7 +2787,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     const cb = {val:0};
     while (this.partslist.remain() > 0) this.partslist.get().reflowthis(layoutroot, cb, null);
     const lpos = [0,0,0,0];
-    await layoutroot.draw(genv, lpos);
+    layoutroot.draw(genv, lpos);
   }
 }
 
@@ -2899,7 +2899,7 @@ class FigScopeParts extends ScopeParts {
     this.figattrlist.importcopy(parent.figattrlist);
     this.figattrlist.tadfactory(this);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2911,14 +2911,14 @@ class FigScopeParts extends ScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      await target.draw(genv, lpos, 1);
+      target.draw(genv, lpos, 1);
     }
   }
 }
 
 class BaseFigScopeParts extends FigScopeParts {
   constructor(parent) { super(parent); this.pagesize_mode = -1; }
-  async draw(genv, pos, draw = 1) {
+ async draw(genv, pos, draw = 1) {
     // Pre-draw pass (skipped, we do single pass)
     let l,t,r,b,width,height;
     switch (this.pagesize_mode) {
@@ -2958,7 +2958,7 @@ class BaseFigScopeParts extends FigScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      await target.draw(genv, lpos, 1);
+      target.draw(genv, lpos, 1);
     }
     pos[0]=this.view[0]; pos[1]=this.view[1]; pos[2]=this.view[2]; pos[3]=this.view[3];
   }
