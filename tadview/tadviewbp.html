@@ -177,17 +177,6 @@
   </div>
 
   <div class="status" id="status"></div>
-  <div style="margin-top:16px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <span style="font-size:0.8rem;color:#666;">デバッグログ</span>
-      <button onclick="document.getElementById('dbglog').value=''"
-        style="font-size:0.75rem;padding:2px 8px;cursor:pointer;">クリア</button>
-    </div>
-    <textarea id="dbglog" readonly rows="12"
-      style="width:100%;font-family:monospace;font-size:0.75rem;resize:vertical;
-             border:1px solid #ddd;border-radius:6px;padding:8px;
-             background:#fafafa;color:#333;box-sizing:border-box;"></textarea>
-  </div>
 </div>
 
 <!-- pdf-lib CDN -->
@@ -2264,7 +2253,7 @@ class Layout {
     if (this.forwarding === null) this.add(obj, force);
     else this.forwarding.addtobottom(obj, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     pos[0] = this.layout[0]+x; pos[1] = this.layout[1]+y;
     pos[2] = this.layout[2]+x; pos[3] = this.layout[3]+y;
@@ -2279,7 +2268,7 @@ class Layout {
       const target = this.partslist.get();
       const offset = this.offsetlist[idx++];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
     }
   }
   getcharwidth() {
@@ -2327,12 +2316,12 @@ class LayoutRootText extends LayoutRoot {
     this.forwarding = new LayoutPageset(this, this, [0,0,0,0], [0,0]);
     this.forwarding.createbranch(parts, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     if (draw === 0) return;
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] = pos[1] = 0;
-    this.forwarding.draw(genv, pos, draw);
+    await this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2373,7 +2362,7 @@ class LayoutPageset extends Layout {
     this.partslist.add(obj);
     obj.setpartsinfo(this);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     this.partslist.rewind();
     let idx = 0, pageage = -1;
@@ -2389,7 +2378,7 @@ class LayoutPageset extends Layout {
       if (genv.newpage(ps[0],ps[1],ps[2],ps[3],ps[4],ps[5]) === null) break;
       const offset = this.offsetlist[idx];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
       idx++;
     }
   }
@@ -2418,11 +2407,11 @@ class LayoutRootInFig extends LayoutRoot {
     this.forwarding = new LayoutLineset(this, this, newlayout, newlimit);
     this.forwarding.createbranch(parts, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] += this.offset[0]; pos[1] += this.offset[1];
-    this.forwarding.draw(genv, pos, draw);
+    await this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2618,13 +2607,13 @@ class ScopeParts extends Parts {
       this.pageattrlist.importcopy(parent.pageattrlist);
     }
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     this.partslist.rewind();
     const x = pos[0], y = pos[1];
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [x, y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
       if (pos[0] > lpos[0]) pos[0]=lpos[0];
       if (pos[1] > lpos[1]) pos[1]=lpos[1];
       if (pos[2] < lpos[2]) pos[2]=lpos[2];
@@ -2921,7 +2910,7 @@ class FigScopeParts extends ScopeParts {
     this.figattrlist.importcopy(parent.figattrlist);
     this.figattrlist.tadfactory(this);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2933,7 +2922,7 @@ class FigScopeParts extends ScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      target.draw(genv, lpos, 1);
+      await target.draw(genv, lpos, 1);
     }
   }
 }
@@ -2980,7 +2969,7 @@ class BaseFigScopeParts extends FigScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      target.draw(genv, lpos, 1);
+      await target.draw(genv, lpos, 1);
     }
     pos[0]=this.view[0]; pos[1]=this.view[1]; pos[2]=this.view[2]; pos[3]=this.view[3];
   }
@@ -3825,15 +3814,6 @@ if (typeof window !== 'undefined') {
 </script>
 <script>
 (function() {
-  function dbgLog(...args) {
-    const ta = document.getElementById('dbglog');
-    const line = args.map(a =>
-      (a !== null && typeof a === 'object') ? JSON.stringify(a) : String(a)
-    ).join(' ');
-    if (ta) { ta.value += line + '\n'; ta.scrollTop = ta.scrollHeight; }
-  }
-  window.__dbgLog = dbgLog;
-
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const convertBtn = document.getElementById('convertBtn');
@@ -3904,10 +3884,7 @@ if (typeof window !== 'undefined') {
       const uint8 = new Uint8Array(buffer);
       setProgress(30);
 
-      document.getElementById('dbglog').value = '';
-      dbgLog('[START] ' + selectedFile.name + ' (' + uint8.length + ' bytes)');
       const pdfBytes = await TadViewBP.convertBpackToPdf(uint8, PDFLib, { figurepage });
-      dbgLog('[END] 変換完了');
       setProgress(90);
 
       // Download
