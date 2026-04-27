@@ -241,10 +241,9 @@ class Bitstream {
   fillbit() {
     while (this.bitremain <= 23) {
       if (!this.remain()) {
-        // End of compressed data: pad with zeros
-        this.bitbuf = (this.bitbuf | (0 << (23 - this.bitremain))) & 0x7fffffff;
-        this.bitremain += 8;
-        continue;
+        // EOF: fill remaining bits with zero and exit
+        this.bitremain = 24;
+        break;
       }
       this.bitbuf = (this.bitbuf | (this.ub() << (23 - this.bitremain))) & 0x7fffffff;
       this.bitremain += 8;
