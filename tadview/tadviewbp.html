@@ -544,7 +544,10 @@ class BpLhead {
   constructor(fs) {
     this.ftype = fs.uh();
     this.atype = fs.uh();
-    this.name = fs.uhs(20);
+    // name: 20 LE-16bit words = 40 bytes of SJIS filename, null-terminated
+    const nameBytes = [];
+    for (let i=0;i<20;i++){const w=fs.uh();nameBytes.push(w&0xff,w>>8);}
+    this.name = bpackNameToString(nameBytes);
     this.orgid = fs.uh();
     this.compmethod = fs.uh();
     this.orgsize = fs.uw();
@@ -587,6 +590,7 @@ class LinkInfo {
   constructor() {
     this.fileinfo = null;
     this.attr = 0;
+    this.title = '';
   }
 }
 
@@ -751,7 +755,7 @@ class PageAttrList extends AttrList {
         this.setupoverlay(parts, count, page, total);
       }
       const pos = [0, 0, 0, 0];
-      target.draw(genv, pos, 1);
+      await target.draw(genv, pos, 1);
     }
   }
 }
@@ -1142,7 +1146,7 @@ class Parts {
   }
   getcharwidth() { return -1; }
   getcharheight() { return -1; }
-  draw(genv, pos, draw = 1) { pos[2] = pos[0]; pos[3] = pos[1]; }
+  async draw(genv, pos, draw = 1) { pos[2] = pos[0]; pos[3] = pos[1]; }
   printinfo() {}
   reflowthis(layoutroot, cb, target) {
     if (cb.val) { target.createbranch(this, 1); cb.val = 0; }
@@ -1183,7 +1187,7 @@ class CharParts extends Parts {
     if (this.parent.textattrlist.get('wordwrapb').includes(this.code)) val |= 2;
     return val;
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     let subscript = 0;
     if (this.parent.textattrlist.get('subscript') !== 0) {
@@ -1276,7 +1280,7 @@ class RubiParts extends Parts {
     this.type = type; this.codelist = codelist;
   }
   iswordwrap() { return 2; }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     pos[2] = pos[0]; pos[3] = pos[1];
     if (draw === 0) return;
     const x = pos[0], y = pos[1];
@@ -1624,7 +1628,7 @@ class VobjParts extends Parts {
     this.frcolor = 0; this.fgcolor = 0; this.bgcolor = 0xffffff;
     this.linkinfo = null;
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     let l = pos[0] = this.view[0] + x;
     let t = pos[1] = this.view[1] + y;
@@ -1648,7 +1652,16 @@ class VobjParts extends Parts {
       genv.setlattr(linewidth, [0xff]);
       genv.polyline(5, points);
     }
-    // Text inside vobj skipped for simplicity
+    // Draw vobj title (BPACK file name as label)
+    const vobjTitle = (this.linkinfo && this.linkinfo.fileinfo && this.linkinfo.fileinfo.name)
+      ? this.linkinfo.fileinfo.name : null;
+    if (vobjTitle && vobjTitle.length > 0 && genv.text_unicode) {
+      const cx = (l + r) / 2;
+      const cy = (t + b) / 2;
+      const fs = (this.fontsize > 0 ? this.fontsize : 10);
+      genv.setcolor(this.fgcolor);
+      genv.text_unicode(vobjTitle, cx, cy, fs);
+    }
   }
 }
 
@@ -2049,7 +2062,7 @@ class LineParts extends Parts {
   setbgpat(bgpatid) {
     this.bgpat = this.parent.figattrlist.get(sprintf('pattern-%04x', bgpatid));
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     if (this.pointlist.length < 2) { pos[2]=x; pos[3]=y; return; }
     let left=this.pointlist[0],right=this.pointlist[0],top=this.pointlist[1],bottom=this.pointlist[1];
@@ -2094,7 +2107,7 @@ class BezierParts extends Parts {
   setbgpat(bgpatid) {
     this.bgpat = this.parent.figattrlist.get(sprintf('pattern-%04x', bgpatid));
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     if (this.pointlist.length < 8) { pos[2]=x; pos[3]=y; return; }
     let left=this.pointlist[0],right=this.pointlist[0],top=this.pointlist[1],bottom=this.pointlist[1];
@@ -2229,7 +2242,7 @@ class Layout {
     if (this.forwarding === null) this.add(obj, force);
     else this.forwarding.addtobottom(obj, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     pos[0] = this.layout[0]+x; pos[1] = this.layout[1]+y;
     pos[2] = this.layout[2]+x; pos[3] = this.layout[3]+y;
@@ -2244,7 +2257,7 @@ class Layout {
       const target = this.partslist.get();
       const offset = this.offsetlist[idx++];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
     }
   }
   getcharwidth() {
@@ -2292,12 +2305,12 @@ class LayoutRootText extends LayoutRoot {
     this.forwarding = new LayoutPageset(this, this, [0,0,0,0], [0,0]);
     this.forwarding.createbranch(parts, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     if (draw === 0) return;
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] = pos[1] = 0;
-    this.forwarding.draw(genv, pos, draw);
+    await this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2338,7 +2351,7 @@ class LayoutPageset extends Layout {
     this.partslist.add(obj);
     obj.setpartsinfo(this);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     this.partslist.rewind();
     let idx = 0, pageage = -1;
@@ -2354,7 +2367,7 @@ class LayoutPageset extends Layout {
       if (genv.newpage(ps[0],ps[1],ps[2],ps[3],ps[4],ps[5]) === null) break;
       const offset = this.offsetlist[idx];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
       idx++;
     }
   }
@@ -2383,11 +2396,11 @@ class LayoutRootInFig extends LayoutRoot {
     this.forwarding = new LayoutLineset(this, this, newlayout, newlimit);
     this.forwarding.createbranch(parts, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] += this.offset[0]; pos[1] += this.offset[1];
-    this.forwarding.draw(genv, pos, draw);
+    await this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2553,13 +2566,13 @@ class BranchCreatorParts extends Parts {
     layoutroot.createbranch(this, 0);
   }
   iswordwrap() { return -2; }
-  draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
+  async draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
   setpartsinfo() {}
 }
 
 class AttrHolderParts extends Parts {
   iswordwrap() { return -2; }
-  draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
+  async draw(genv, pos, draw = 1) { pos[2]=pos[0]; pos[3]=pos[1]; }
 }
 
 // ============================================================
@@ -2583,13 +2596,13 @@ class ScopeParts extends Parts {
       this.pageattrlist.importcopy(parent.pageattrlist);
     }
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     this.partslist.rewind();
     const x = pos[0], y = pos[1];
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [x, y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
       if (pos[0] > lpos[0]) pos[0]=lpos[0];
       if (pos[1] > lpos[1]) pos[1]=lpos[1];
       if (pos[2] < lpos[2]) pos[2]=lpos[2];
@@ -2611,12 +2624,12 @@ class BaseScopeParts extends ScopeParts {
     new TadFactoryBaseTextScopeParts(this);
     new TadFactoryBaseFigScopeParts(this);
   }
-  draw_root(genv) {
+  async draw_root(genv) {
     this.partslist.rewind();
     if (this.partslist.remain() <= 0) throw new Error('no scope.');
     const target = this.partslist.get();
     const pos = [0,0,0,0];
-    target.draw(genv, pos, 1);
+    await target.draw(genv, pos, 1);
   }
 }
 
@@ -2740,7 +2753,7 @@ class TextScopeParts extends ScopeParts {
     this.textattrlist.add('escapeflag', 0);
     return ns.factoryfinder.read(key, type, stream);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const layoutroot = new LayoutRootText(genv);
     this.partslist.rewind();
     const cb = {val:0};
@@ -2748,7 +2761,7 @@ class TextScopeParts extends ScopeParts {
       const target = this.partslist.get();
       target.reflowthis(layoutroot, cb, null);
     }
-    layoutroot.draw(genv, pos, draw);
+    await layoutroot.draw(genv, pos, draw);
   }
 }
 
@@ -2758,7 +2771,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     this.bgpat = null;
     this.view = [0,0,0,0];
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2774,7 +2787,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     const cb = {val:0};
     while (this.partslist.remain() > 0) this.partslist.get().reflowthis(layoutroot, cb, null);
     const lpos = [0,0,0,0];
-    layoutroot.draw(genv, lpos);
+    await layoutroot.draw(genv, lpos);
   }
 }
 
@@ -2886,7 +2899,7 @@ class FigScopeParts extends ScopeParts {
     this.figattrlist.importcopy(parent.figattrlist);
     this.figattrlist.tadfactory(this);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2898,14 +2911,14 @@ class FigScopeParts extends ScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      target.draw(genv, lpos, 1);
+      await target.draw(genv, lpos, 1);
     }
   }
 }
 
 class BaseFigScopeParts extends FigScopeParts {
   constructor(parent) { super(parent); this.pagesize_mode = -1; }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     // Pre-draw pass (skipped, we do single pass)
     let l,t,r,b,width,height;
     switch (this.pagesize_mode) {
@@ -2920,7 +2933,7 @@ class BaseFigScopeParts extends FigScopeParts {
         this.partslist.rewind();
         while (this.partslist.remain()>0) {
           const target=this.partslist.get(); const lpos=[0,0,0,0];
-          target.draw(new GenvNull(), lpos, 0);
+          await target.draw(new GenvNull(), lpos, 0);
           ml=Math.min(ml,lpos[0]);mt=Math.min(mt,lpos[1]);
           mr=Math.max(mr,lpos[2]);mb=Math.max(mb,lpos[3]);
         }
@@ -2945,7 +2958,7 @@ class BaseFigScopeParts extends FigScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      target.draw(genv, lpos, 1);
+      await target.draw(genv, lpos, 1);
     }
     pos[0]=this.view[0]; pos[1]=this.view[1]; pos[2]=this.view[2]; pos[3]=this.view[3];
   }
@@ -3471,6 +3484,38 @@ class GenvPdf {
     return width;
   }
 
+  // Draw a Unicode string (used for vobj titles etc.)
+  text_unicode(str, cx, cy, fontsize_px) {
+    if (!this.currentPage || !str) return;
+    const cidFont = this._cidFontH;
+    this._ensurePageFont(cidFont);
+    const fontSize = Math.max(fontsize_px * this.ratio_v, 4);
+    let px = cx * this.ratio_h;
+    let py = this._pdfY(cy) - fontSize;
+    const r = this.currentColor[0];
+    const g = this.currentColor[1];
+    const b = this.currentColor[2];
+    // Build hex-encoded UCS-2 string from Unicode codepoints
+    let hexStr = '';
+    for (const ch of str) {
+      const cp = ch.codePointAt(0);
+      if (cp === undefined) continue;
+      hexStr += cp.toString(16).padStart(4, '0');
+    }
+    if (!hexStr) return;
+    const stream = [
+      `q`,
+      `${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} rg`,
+      `BT`,
+      `/${cidFont.fontKey} ${fontSize.toFixed(2)} Tf`,
+      `1 0 0 1 ${px.toFixed(2)} ${py.toFixed(2)} Tm`,
+      `<${hexStr}> Tj`,
+      `ET`,
+      `Q`,
+    ].join('\n');
+    this.currentPage.pushOperators(this.PDFLib.PDFOperator.of(stream));
+  }
+
   async bitmap(bitmaparray, view_rect, draw_rect) {
     if (!this.currentPage || !bitmaparray) return;
     const { rgba, width, height } = bitmaparray;
@@ -3516,7 +3561,7 @@ class GenvPdf {
           )
         );
       }
-    } catch(e) { /* skip on error */ }
+    } catch(e) { console.warn('bitmap error:', e); }
   }
 
   getjumpto() { return this.pagecountobj; }
@@ -3530,6 +3575,20 @@ class GenvPdf {
 // ============================================================
 // EUC-JP → SJIS conversion (for CID font encoding)
 // ============================================================
+
+// BPACK filename (SJIS bytes, null-terminated) → JS string
+function bpackNameToString(bytes) {
+  // Find null terminator
+  let end = bytes.indexOf(0);
+  if (end < 0) end = bytes.length;
+  const arr = new Uint8Array(bytes.slice(0, end));
+  try {
+    return new TextDecoder('shift-jis').decode(arr);
+  } catch(e) {
+    // fallback: treat as Latin1
+    return String.fromCharCode(...arr);
+  }
+}
 
 function eucToUnicode(eucH, eucL) {
   try {
@@ -3696,7 +3755,7 @@ async function convertBpackToPdf(uint8array, pdfLib, options = {}) {
     fileinfo[i].jumpto = genv.getjumpto();
     genv.setdpi(target.pageattrlist.get('dpih'), target.pageattrlist.get('dpiv'));
     const pos = [0,0,0,0];
-    basescope.draw_root(genvNull);
+    await basescope.draw_root(genvNull);
   }
 
   // Reset page counter and draw
@@ -3707,7 +3766,7 @@ async function convertBpackToPdf(uint8array, pdfLib, options = {}) {
     const target = basescope.partslist.get();
     if (!target) continue;
     genv.setdpi(target.pageattrlist.get('dpih'), target.pageattrlist.get('dpiv'));
-    basescope.draw_root(genv);
+    await basescope.draw_root(genv);
     genv.flushpage();
   }
 
