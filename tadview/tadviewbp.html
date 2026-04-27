@@ -1664,11 +1664,14 @@ class VobjParts extends Parts {
     const vobjTitle = (this.linkinfo && this.linkinfo.fileinfo && this.linkinfo.fileinfo.name)
       ? this.linkinfo.fileinfo.name : null;
     if (vobjTitle && vobjTitle.length > 0 && genv.text_unicode) {
-      const cx = (l + r) / 2;
-      const cy = (t + b) / 2;
       const fs = (this.fontsize > 0 ? this.fontsize : 10);
       genv.setcolor(this.fgcolor);
-      genv.text_unicode(vobjTitle, cx, cy, fs);
+      // Pass TAD-space coords; text_unicode handles ratio conversion and clipping
+      const ptl2 = [this.view[0] + x, this.view[1] + y];
+      const ptr2 = [this.view[2] + x, this.view[3] + y];
+      this.parent.scale.convert_point(ptl2);
+      this.parent.scale.convert_point(ptr2);
+      genv.text_unicode(vobjTitle, ptl2[0], ptl2[1], ptr2[0], ptr2[1], fs);
     }
   }
 }
@@ -3492,18 +3495,24 @@ class GenvPdf {
     return width;
   }
 
-  // Draw a Unicode string (used for vobj titles etc.)
-  text_unicode(str, cx, cy, fontsize_px) {
+  // Draw a Unicode string clipped to a box (used for vobj titles)
+  // l,t,r,b are already in TAD coordinates; fontsize_px is in TAD units
+  text_unicode(str, l, t, r, b, fontsize_px) {
     if (!this.currentPage || !str) return;
     const cidFont = this._cidFontH;
     this._ensurePageFont(cidFont);
     const fontSize = Math.max(fontsize_px * this.ratio_v, 4);
-    let px = cx * this.ratio_h;
-    let py = this._pdfY(cy) - fontSize;
-    const r = this.currentColor[0];
-    const g = this.currentColor[1];
-    const b = this.currentColor[2];
-    // Build hex-encoded UCS-2 string from Unicode codepoints
+    // Convert TAD coords to PDF coords
+    const pl = l * this.ratio_h;
+    const pr = r * this.ratio_h;
+    const pt = this._pdfY(t);   // top in PDF = lower Y value
+    const pb = this._pdfY(b);   // bottom in PDF = higher Y value
+    // Text baseline: just below top of box
+    const px = pl;
+    const py = Math.max(pt, pb) - fontSize;
+    const rc = this.currentColor[0];
+    const gc = this.currentColor[1];
+    const bc = this.currentColor[2];
     let hexStr = '';
     for (const ch of str) {
       const cp = ch.codePointAt(0);
@@ -3511,9 +3520,13 @@ class GenvPdf {
       hexStr += cp.toString(16).padStart(4, '0');
     }
     if (!hexStr) return;
+    const boxL = pl.toFixed(2), boxB = Math.min(pt,pb).toFixed(2);
+    const boxW = Math.abs(pr - pl).toFixed(2), boxH = Math.abs(pt - pb).toFixed(2);
     const stream = [
       `q`,
-      `${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} rg`,
+      // Clip to vobj box
+      `${boxL} ${boxB} ${boxW} ${boxH} re W n`,
+      `${rc.toFixed(4)} ${gc.toFixed(4)} ${bc.toFixed(4)} rg`,
       `BT`,
       `/${cidFont.fontKey} ${fontSize.toFixed(2)} Tf`,
       `1 0 0 1 ${px.toFixed(2)} ${py.toFixed(2)} Tm`,
@@ -3551,23 +3564,7 @@ class GenvPdf {
       const w = Math.abs(view_rect[2] - view_rect[0]) * this.ratio_h;
       const h = Math.abs(this._pdfY(view_rect[1]) - this._pdfY(view_rect[3]));
       if (w > 0 && h > 0) {
-        // Use raw PDF operators to draw image (works with any pdf-lib version)
-        const imgRef = img.ref;
-        const imgName = 'Img' + (this._imgCount = (this._imgCount||0)+1);
-        // Register XObject in page resources
-        const res = this.currentPage.node.get(this.PDFLib.PDFName.of('Resources'));
-        let xobj = res && res.get(this.PDFLib.PDFName.of('XObject'));
-        if (!xobj) {
-          xobj = this.pdfDoc.context.obj({});
-          if (res) res.set(this.PDFLib.PDFName.of('XObject'), xobj);
-        }
-        xobj.set(this.PDFLib.PDFName.of(imgName), imgRef);
-        // Push image drawing operators
-        this.currentPage.pushOperators(
-          this.PDFLib.PDFOperator.of(
-            `q ${w.toFixed(4)} 0 0 ${h.toFixed(4)} ${vl.toFixed(4)} ${vb.toFixed(4)} cm /${imgName} Do Q`
-          )
-        );
+        this.currentPage.drawImage(img, { x: vl, y: vb, width: w, height: h });
       }
     } catch(e) { console.warn('bitmap error:', e); }
   }
