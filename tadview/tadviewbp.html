@@ -240,11 +240,7 @@ class Bitstream {
   rewindlinkinfo() { this.linkinfopos = 0; }
   fillbit() {
     while (this.bitremain <= 23) {
-      if (!this.remain()) {
-        // EOF: fill remaining bits with zero and exit
-        this.bitremain = 24;
-        break;
-      }
+      if (!this.remain()) throw new Error('end of file.');
       this.bitbuf = (this.bitbuf | (this.ub() << (23 - this.bitremain))) & 0x7fffffff;
       this.bitremain += 8;
     }
@@ -476,9 +472,7 @@ class LzssStream extends Bytestream {
       return val;
     }
     if (this.blocksize <= 0) {
-      if (this.fs.remain() <= 0) return 0; // EOF: return padding
       this.blocksize = this.fs.getbit(16);
-      if (this.blocksize === 0 && this.fs.remain() <= 0) return 0;
       this.ctable = new HufTableC(this.fs);
       this.ptable = new HufTableP(this.fs, 14, 4);
     }
@@ -553,17 +547,12 @@ class BpLhead {
     // name: 20 LE-16bit words; each word: low=l, high=h → EUC-JP: 0x8080|(h<<8)|l
     const nameEuc = [];
     for (let i = 0; i < 20; i++) {
-      const w = fs.uh();           // LE 16-bit
+      const w = fs.uh();
       const l = w & 0xff;
       const h = (w >> 8) & 0xff;
-      if (l === 0) break;          // null terminator
-      if (h === 0) {
-        // ASCII/半角
-        nameEuc.push(l);
-      } else {
-        // 全角: EUC-JP 2バイト = 0x80|h, 0x80|l
-        nameEuc.push(0x80 | h, 0x80 | l);
-      }
+      if (l === 0) break;
+      if (h === 0) { nameEuc.push(l); }
+      else { nameEuc.push(0x80 | h, 0x80 | l); }
     }
     this.name = bpackNameToString(nameEuc);
     this.orgid = fs.uh();
@@ -2260,7 +2249,7 @@ class Layout {
     if (this.forwarding === null) this.add(obj, force);
     else this.forwarding.addtobottom(obj, force);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     pos[0] = this.layout[0]+x; pos[1] = this.layout[1]+y;
     pos[2] = this.layout[2]+x; pos[3] = this.layout[3]+y;
@@ -2275,7 +2264,7 @@ class Layout {
       const target = this.partslist.get();
       const offset = this.offsetlist[idx++];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      await target.draw(genv, lpos, draw);
+      target.draw(genv, lpos, draw);
     }
   }
   getcharwidth() {
@@ -2323,12 +2312,12 @@ class LayoutRootText extends LayoutRoot {
     this.forwarding = new LayoutPageset(this, this, [0,0,0,0], [0,0]);
     this.forwarding.createbranch(parts, force);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     if (draw === 0) return;
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] = pos[1] = 0;
-    await this.forwarding.draw(genv, pos, draw);
+    this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2369,7 +2358,7 @@ class LayoutPageset extends Layout {
     this.partslist.add(obj);
     obj.setpartsinfo(this);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x = pos[0], y = pos[1];
     this.partslist.rewind();
     let idx = 0, pageage = -1;
@@ -2385,7 +2374,7 @@ class LayoutPageset extends Layout {
       if (genv.newpage(ps[0],ps[1],ps[2],ps[3],ps[4],ps[5]) === null) break;
       const offset = this.offsetlist[idx];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      await target.draw(genv, lpos, draw);
+      target.draw(genv, lpos, draw);
       idx++;
     }
   }
@@ -2414,11 +2403,11 @@ class LayoutRootInFig extends LayoutRoot {
     this.forwarding = new LayoutLineset(this, this, newlayout, newlimit);
     this.forwarding.createbranch(parts, force);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] += this.offset[0]; pos[1] += this.offset[1];
-    await this.forwarding.draw(genv, pos, draw);
+    this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2614,13 +2603,13 @@ class ScopeParts extends Parts {
       this.pageattrlist.importcopy(parent.pageattrlist);
     }
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     this.partslist.rewind();
     const x = pos[0], y = pos[1];
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [x, y, 0, 0];
-      await target.draw(genv, lpos, draw);
+      target.draw(genv, lpos, draw);
       if (pos[0] > lpos[0]) pos[0]=lpos[0];
       if (pos[1] > lpos[1]) pos[1]=lpos[1];
       if (pos[2] < lpos[2]) pos[2]=lpos[2];
@@ -2789,7 +2778,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     this.bgpat = null;
     this.view = [0,0,0,0];
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2805,7 +2794,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     const cb = {val:0};
     while (this.partslist.remain() > 0) this.partslist.get().reflowthis(layoutroot, cb, null);
     const lpos = [0,0,0,0];
-    await layoutroot.draw(genv, lpos);
+    layoutroot.draw(genv, lpos);
   }
 }
 
@@ -2917,7 +2906,7 @@ class FigScopeParts extends ScopeParts {
     this.figattrlist.importcopy(parent.figattrlist);
     this.figattrlist.tadfactory(this);
   }
-  async draw(genv, pos, draw = 1) {
+  draw(genv, pos, draw = 1) {
     const x=pos[0],y=pos[1];
     let l=pos[0]=this.view[0]+x, t=pos[1]=this.view[1]+y;
     let r=pos[2]=this.view[2]+x, b=pos[3]=this.view[3]+y;
@@ -2929,7 +2918,7 @@ class FigScopeParts extends ScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      await target.draw(genv, lpos, 1);
+      target.draw(genv, lpos, 1);
     }
   }
 }
@@ -2976,7 +2965,7 @@ class BaseFigScopeParts extends FigScopeParts {
     while (this.partslist.remain() > 0) {
       const target = this.partslist.get();
       const lpos = [0,0,0,0];
-      await target.draw(genv, lpos, 1);
+      target.draw(genv, lpos, 1);
     }
     pos[0]=this.view[0]; pos[1]=this.view[1]; pos[2]=this.view[2]; pos[3]=this.view[3];
   }
@@ -3779,9 +3768,7 @@ async function convertBpackToPdf(uint8array, pdfLib, options = {}) {
     const target = basescope.partslist.get();
     if (!target) continue;
     genv.setdpi(target.pageattrlist.get('dpih'), target.pageattrlist.get('dpiv'));
-    try {
-      await basescope.draw_root(genv);
-    } catch(e) { console.warn('draw_root error:', e); }
+    await basescope.draw_root(genv);
     genv.flushpage();
   }
 
