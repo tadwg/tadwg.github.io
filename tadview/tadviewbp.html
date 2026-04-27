@@ -2275,7 +2275,7 @@ class Layout {
       const target = this.partslist.get();
       const offset = this.offsetlist[idx++];
       const lpos = [offset[0]+x, offset[1]+y, 0, 0];
-      target.draw(genv, lpos, draw);
+      await target.draw(genv, lpos, draw);
     }
   }
   getcharwidth() {
@@ -2328,7 +2328,7 @@ class LayoutRootText extends LayoutRoot {
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] = pos[1] = 0;
-    this.forwarding.draw(genv, pos, draw);
+    await this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2414,11 +2414,11 @@ class LayoutRootInFig extends LayoutRoot {
     this.forwarding = new LayoutLineset(this, this, newlayout, newlimit);
     this.forwarding.createbranch(parts, force);
   }
-  draw(genv, pos, draw = 1) {
+  async draw(genv, pos, draw = 1) {
     if (this.forwarding === null) return;
     this.forwarding.fixlayout();
     pos[0] += this.offset[0]; pos[1] += this.offset[1];
-    this.forwarding.draw(genv, pos, draw);
+    await this.forwarding.draw(genv, pos, draw);
   }
 }
 
@@ -2805,7 +2805,7 @@ class TextScopeParts_InFig extends TextScopeParts {
     const cb = {val:0};
     while (this.partslist.remain() > 0) this.partslist.get().reflowthis(layoutroot, cb, null);
     const lpos = [0,0,0,0];
-    layoutroot.draw(genv, lpos);
+    await layoutroot.draw(genv, lpos);
   }
 }
 
