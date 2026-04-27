@@ -177,6 +177,17 @@
   </div>
 
   <div class="status" id="status"></div>
+  <div style="margin-top:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <span style="font-size:0.8rem;color:#666;">デバッグログ</span>
+      <button onclick="document.getElementById('dbglog').value=''"
+        style="font-size:0.75rem;padding:2px 8px;cursor:pointer;">クリア</button>
+    </div>
+    <textarea id="dbglog" readonly rows="12"
+      style="width:100%;font-family:monospace;font-size:0.75rem;resize:vertical;
+             border:1px solid #ddd;border-radius:6px;padding:8px;
+             background:#fafafa;color:#333;box-sizing:border-box;"></textarea>
+  </div>
 </div>
 
 <!-- pdf-lib CDN -->
@@ -3539,11 +3550,11 @@ class GenvPdf {
 
   async bitmap(bitmaparray, view_rect, draw_rect) {
     if (!this.currentPage || !bitmaparray) {
-      console.log('[IMG] bitmap skip: currentPage=', !!this.currentPage, 'bitmaparray=', !!bitmaparray);
+      (window.__dbgLog||console.log)('[IMG] bitmap skip: currentPage=', !!this.currentPage, 'bitmaparray=', !!bitmaparray);
       return;
     }
     const { rgba, width, height } = bitmaparray;
-    console.log('[IMG] bitmap called: size=', width, 'x', height,
+    (window.__dbgLog||console.log)('[IMG] bitmap called: size=', width, 'x', height,
       'view_rect=', view_rect, 'draw_rect=', draw_rect,
       'rgba bytes=', rgba ? rgba.length : 0);
 
@@ -3558,11 +3569,11 @@ class GenvPdf {
       const blob = await oc.convertToBlob({ type: 'image/png' });
       const ab = await blob.arrayBuffer();
       pngBytes = new Uint8Array(ab);
-      console.log('[IMG] OffscreenCanvas PNG ok:', pngBytes.length, 'bytes');
+      (window.__dbgLog||console.log)('[IMG] OffscreenCanvas PNG ok:', pngBytes.length, 'bytes');
     } catch(e) {
-      console.log('[IMG] OffscreenCanvas failed, using encodePng fallback:', e.message);
+      (window.__dbgLog||console.log)('[IMG] OffscreenCanvas failed, using encodePng fallback:', e.message);
       pngBytes = encodePng(rgba, width, height);
-      console.log('[IMG] encodePng:', pngBytes ? pngBytes.length : 0, 'bytes');
+      (window.__dbgLog||console.log)('[IMG] encodePng:', pngBytes ? pngBytes.length : 0, 'bytes');
     }
 
     try {
@@ -3574,24 +3585,24 @@ class GenvPdf {
       (window.__dbgLog||console.log)('[IMG] embedPng ok, placing: x=', vl.toFixed(1), 'y=', vb.toFixed(1),
         'w=', w.toFixed(1), 'h=', h.toFixed(1));
       if (w > 0 && h > 0) {
-        // Low-level XObject: avoids drawImage conflict with pushOperators-based content
+        // Use pdf-lib's embedImage + page.drawImage (high-level, reliable)
         const imgName = 'Img' + (this._imgCount = (this._imgCount||0)+1);
-        const pageNode = this.currentPage.node;
+        // Manually write image XObject entry via page.node.Resources
         const PDFName = this.PDFLib.PDFName;
-        let res = pageNode.get(PDFName.of('Resources'));
-        if (!res) {
-          pageNode.set(PDFName.of('Resources'), this.pdfDoc.context.obj({}));
-          res = pageNode.get(PDFName.of('Resources'));
+        // Ensure Resources/XObject dict exists on the page
+        const pageDict = this.currentPage.node;
+        if (!pageDict.get(PDFName.of('Resources'))) {
+          pageDict.set(PDFName.of('Resources'), this.pdfDoc.context.obj({}));
         }
-        let xobj = res.get(PDFName.of('XObject'));
-        if (!xobj) {
-          res.set(PDFName.of('XObject'), this.pdfDoc.context.obj({}));
-          xobj = res.get(PDFName.of('XObject'));
+        const resDict = pageDict.get(PDFName.of('Resources'));
+        if (!resDict.get(PDFName.of('XObject'))) {
+          resDict.set(PDFName.of('XObject'), this.pdfDoc.context.obj({}));
         }
-        xobj.set(PDFName.of(imgName), img.ref);
-        const ops = `q ${w.toFixed(4)} 0 0 ${h.toFixed(4)} ${vl.toFixed(4)} ${vb.toFixed(4)} cm /${imgName} Do Q`;
-        this.currentPage.pushOperators(this.PDFLib.PDFOperator.of(ops));
-        (window.__dbgLog||console.log)('[IMG] placed:', imgName, ops);
+        resDict.get(PDFName.of('XObject')).set(PDFName.of(imgName), img.ref);
+        // Write operators directly into content stream
+        const op = `q ${w.toFixed(3)} 0 0 ${h.toFixed(3)} ${vl.toFixed(3)} ${vb.toFixed(3)} cm /${imgName} Do Q`;
+        this.currentPage.pushOperators(this.PDFLib.PDFOperator.of(op));
+        (window.__dbgLog||console.log)('[IMG] placed ok:', imgName, 'x='+vl.toFixed(1),'y='+vb.toFixed(1),'w='+w.toFixed(1),'h='+h.toFixed(1));
       } else {
         (window.__dbgLog||console.warn)('[IMG] skipped: w or h = 0');
       }
@@ -3814,6 +3825,15 @@ if (typeof window !== 'undefined') {
 </script>
 <script>
 (function() {
+  function dbgLog(...args) {
+    const ta = document.getElementById('dbglog');
+    const line = args.map(a =>
+      (a !== null && typeof a === 'object') ? JSON.stringify(a) : String(a)
+    ).join(' ');
+    if (ta) { ta.value += line + '\n'; ta.scrollTop = ta.scrollHeight; }
+  }
+  window.__dbgLog = dbgLog;
+
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const convertBtn = document.getElementById('convertBtn');
@@ -3884,7 +3904,10 @@ if (typeof window !== 'undefined') {
       const uint8 = new Uint8Array(buffer);
       setProgress(30);
 
+      document.getElementById('dbglog').value = '';
+      dbgLog('[START] ' + selectedFile.name + ' (' + uint8.length + ' bytes)');
       const pdfBytes = await TadViewBP.convertBpackToPdf(uint8, PDFLib, { figurepage });
+      dbgLog('[END] 変換完了');
       setProgress(90);
 
       // Download
