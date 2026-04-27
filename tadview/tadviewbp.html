@@ -240,7 +240,12 @@ class Bitstream {
   rewindlinkinfo() { this.linkinfopos = 0; }
   fillbit() {
     while (this.bitremain <= 23) {
-      if (!this.remain()) throw new Error('end of file.');
+      if (!this.remain()) {
+        // End of compressed data: pad with zeros
+        this.bitbuf = (this.bitbuf | (0 << (23 - this.bitremain))) & 0x7fffffff;
+        this.bitremain += 8;
+        continue;
+      }
       this.bitbuf = (this.bitbuf | (this.ub() << (23 - this.bitremain))) & 0x7fffffff;
       this.bitremain += 8;
     }
@@ -472,7 +477,9 @@ class LzssStream extends Bytestream {
       return val;
     }
     if (this.blocksize <= 0) {
+      if (this.fs.remain() <= 0) return 0; // EOF: return padding
       this.blocksize = this.fs.getbit(16);
+      if (this.blocksize === 0 && this.fs.remain() <= 0) return 0;
       this.ctable = new HufTableC(this.fs);
       this.ptable = new HufTableP(this.fs, 14, 4);
     }
@@ -3773,7 +3780,9 @@ async function convertBpackToPdf(uint8array, pdfLib, options = {}) {
     const target = basescope.partslist.get();
     if (!target) continue;
     genv.setdpi(target.pageattrlist.get('dpih'), target.pageattrlist.get('dpiv'));
-    await basescope.draw_root(genv);
+    try {
+      await basescope.draw_root(genv);
+    } catch(e) { console.warn('draw_root error:', e); }
     genv.flushpage();
   }
 
