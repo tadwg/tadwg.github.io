@@ -3175,16 +3175,8 @@ class GenvPdf {
   }
 
   _ensurePageFont(info) {
-    if (!this.currentPage) return;
-    const res = this.currentPage.node.get(this.PDFLib.PDFName.of('Resources'));
-    if (!res) return;
-    let fonts = res.get(this.PDFLib.PDFName.of('Font'));
-    if (!fonts) {
-      fonts = this.pdfDoc.context.obj({});
-      res.set(this.PDFLib.PDFName.of('Font'), fonts);
-    }
-    const k = this.PDFLib.PDFName.of(info.fontKey);
-    if (!fonts.get(k)) fonts.set(k, info.fontRef);
+    // Fonts are pre-registered in _setupPageResources(); no-op here
+    if (!this.currentPage || !info) return;
   }
 
   setdpi(dpi_h, dpi_v) {
@@ -3215,10 +3207,35 @@ class GenvPdf {
     this.pageObjects.push(this.currentPage);
     this.totalPages++;
     this.jumptolist = [];
+    // Pre-register all CID fonts in page Resources
+    this._setupPageResources();
     this.currentPage.pushOperators(
       this.PDFLib.pushGraphicsState()
     );
     return this;
+  }
+
+  _setupPageResources() {
+    const PDFName = this.PDFLib.PDFName;
+    const pageNode = this.currentPage.node;
+    // Ensure Resources dict exists
+    if (!pageNode.get(PDFName.of('Resources'))) {
+      pageNode.set(PDFName.of('Resources'), this.pdfDoc.context.obj({}));
+    }
+    const res = pageNode.get(PDFName.of('Resources'));
+    // Ensure Font dict exists
+    if (!res.get(PDFName.of('Font'))) {
+      res.set(PDFName.of('Font'), this.pdfDoc.context.obj({}));
+    }
+    const fonts = res.get(PDFName.of('Font'));
+    // Register all CID fonts
+    for (const info of [this._cidFontH, this._cidFontV, this._cidFontGoH, this._cidFontGoV]) {
+      if (info) fonts.set(PDFName.of(info.fontKey), info.fontRef);
+    }
+    // Ensure XObject dict exists (for images)
+    if (!res.get(PDFName.of('XObject'))) {
+      res.set(PDFName.of('XObject'), this.pdfDoc.context.obj({}));
+    }
   }
 
   flushpage() {
@@ -3578,15 +3595,8 @@ class GenvPdf {
         const imgName = 'Img' + (this._imgCount = (this._imgCount||0)+1);
         // Manually write image XObject entry via page.node.Resources
         const PDFName = this.PDFLib.PDFName;
-        // Ensure Resources/XObject dict exists on the page
-        const pageDict = this.currentPage.node;
-        if (!pageDict.get(PDFName.of('Resources'))) {
-          pageDict.set(PDFName.of('Resources'), this.pdfDoc.context.obj({}));
-        }
-        const resDict = pageDict.get(PDFName.of('Resources'));
-        if (!resDict.get(PDFName.of('XObject'))) {
-          resDict.set(PDFName.of('XObject'), this.pdfDoc.context.obj({}));
-        }
+        // Resources/XObject already set up in _setupPageResources()
+        const resDict = this.currentPage.node.get(PDFName.of('Resources'));
         resDict.get(PDFName.of('XObject')).set(PDFName.of(imgName), img.ref);
         // Write operators directly into content stream
         const op = `q ${w.toFixed(3)} 0 0 ${h.toFixed(3)} ${vl.toFixed(3)} ${vb.toFixed(3)} cm /${imgName} Do Q`;
